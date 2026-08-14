@@ -196,10 +196,10 @@ def store_to_hopsworks(row: dict) -> None:
         version=1,
         primary_key=["timestamp"],
         description="Lahore AQI features: pollutants, weather, time-based, derived",
+        time_travel_format="HUDI",
     )
     feature_group.insert(pd.DataFrame([row]))
     print(f"[ok] wrote feature row to Hopsworks feature group '{HOPSWORKS_FEATURE_GROUP}'")
-
 
 def store_features(row: dict) -> None:
     if HOPSWORKS_API_KEY and HOPSWORKS_PROJECT_NAME:
