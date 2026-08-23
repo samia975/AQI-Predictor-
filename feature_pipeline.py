@@ -184,10 +184,10 @@ def store_to_hopsworks(row: dict) -> None:
     try:
         import hopsworks
         import pandas as pd
-    except ImportError:
-        print("[warn] hopsworks/pandas not installed — run: pip install hopsworks pandas")
-        store_to_local_csv(row)
-        return
+    except ImportError as exc:
+        # store_features() already writes the local CSV backup regardless,
+        # so just report the problem here instead of writing a duplicate row.
+        raise RuntimeError("hopsworks/pandas not installed") from exc
 
     project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY, project=HOPSWORKS_PROJECT_NAME)
     fs = project.get_feature_store()
@@ -196,17 +196,28 @@ def store_to_hopsworks(row: dict) -> None:
         version=1,
         primary_key=["timestamp"],
         description="Lahore AQI features: pollutants, weather, time-based, derived",
-        time_travel_format="HUDI",
+        time_travel_format="HUDI",  # DELTA format needs a library that isn't available on Windows
     )
     feature_group.insert(pd.DataFrame([row]))
     print(f"[ok] wrote feature row to Hopsworks feature group '{HOPSWORKS_FEATURE_GROUP}'")
 
+
 def store_features(row: dict) -> None:
     if HOPSWORKS_API_KEY and HOPSWORKS_PROJECT_NAME:
-        store_to_hopsworks(row)
+        try:
+            store_to_hopsworks(row)
+        except Exception as exc:
+            # Don't let a Hopsworks hiccup (slow materialization job, transient
+            # network issue, etc.) break the hourly run — we still want this
+            # row saved somewhere reliable.
+            print(f"[warn] Hopsworks write failed, continuing with local backup: {exc}")
     else:
-        print("[info] Hopsworks not configured — using local CSV fallback")
-        store_to_local_csv(row)
+        print("[info] Hopsworks not configured — using local CSV only")
+
+    # Always keep a local CSV copy too, regardless of Hopsworks status.
+    # This guarantees you have a complete, reliable dataset for training even if
+    # Hopsworks' offline materialization is slow or backlogged.
+    store_to_local_csv(row)
 
 
 # ---------------------------------------------------------------------------
